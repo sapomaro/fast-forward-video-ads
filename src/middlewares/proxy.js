@@ -1,7 +1,7 @@
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import { parseJson, stringifyJson } from '../utils/json.js';
 import { mergeDeep } from '../utils/objects.js';
-import { parseCookies } from '../utils/cookies.js';
+import { parseCookies, stringifyCookies } from '../utils/cookies.js';
 
 export function proxy(config = {}) {
     const {
@@ -10,6 +10,7 @@ export function proxy(config = {}) {
         followRedirects,
         amendOutgoingCookies,
         amendOutgoingJson,
+        amendIncomingCookies,
         amendIncomingJson,
         amendIncomingHtml,
         ...restConfig
@@ -28,13 +29,15 @@ export function proxy(config = {}) {
                 let newCookiesString = '';
                 if (typeof amendOutgoingCookies === 'function') {
                     newCookiesString = amendOutgoingCookies(req.headers.cookie);
-                } else if (amendOutgoingCookies) {
-                    newCookiesString = stringifyJson(
-                        (parseCookies(req.headers.cookie) || {}),
-                        (parseCookies(amendOutgoingCookies) || {}),
-                    );
+                } else {
+                    newCookiesString = stringifyCookies({
+                        ...(parseCookies(req.headers.cookie) || {}),
+                        ...(parseCookies(amendOutgoingCookies) || {}),
+                    });
                 }
-                proxyReq.setHeader('cookie', newCookiesString);
+                if (newCookiesString) {
+                    proxyReq.setHeader('cookie', newCookiesString);
+                }
             }
 
             if (contentType.includes('application/json')) {
@@ -57,6 +60,21 @@ export function proxy(config = {}) {
 
             if (followRedirects === false) {
                 res.removeHeader('location');
+            }
+
+            if (amendIncomingCookies) {
+                let newCookiesString = '';
+                if (typeof amendIncomingCookies === 'function') {
+                    newCookiesString = amendIncomingCookies(proxyRes.headers?.cookie);
+                } else {
+                    newCookiesString = stringifyCookies({
+                        ...(parseCookies(proxyRes.headers?.cookie) || {}),
+                        ...(parseCookies(amendIncomingCookies) || {}),
+                    });
+                }
+                if (newCookiesString) {
+                    res.setHeader('cookie', newCookiesString);
+                }
             }
 
             if (contentType.includes('application/json') && amendIncomingJson) {
