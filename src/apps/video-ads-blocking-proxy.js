@@ -4,22 +4,22 @@ import { logger } from '../middlewares/logger.js';
 import { proxy } from '../middlewares/proxy.js';
 
 export function runVideoAdsBlockingProxy() {
-    const { IP, PORT1, HOST1, PATH1, PORT2, HOST2 } = config();
+    const { IP, PORT_MAIN, HOST_MAIN, PATH_MAIN, PORT_CDN, HOST_CDN } = config();
 
-    const app1 = express();
-    app1.use(express.json());
+    const mainProxyServer = express();
+    mainProxyServer.use(express.json());
 
-    app1.use('/*', logger('<APP1-PROXY>'), proxy({
-        target: HOST1,
+    mainProxyServer.use('/*', logger('<MAIN-PROXY>'), proxy({
+        target: HOST_MAIN,
         destination: IP,
-        pathRewrite: { '^/site': PATH1 },
+        pathRewrite: { '^/go': PATH_MAIN },
         amendIncomingHtml: `
             <script>
                 function trimVideoIframe() {
                     const collection = document.getElementsByTagName('iframe') || [];
                     for (const item of collection) {
-                        if (item.src?.includes('${HOST2}'.replace(/^.+\\.([A-Za-z0-9]+\\.[A-Za-z]+\\/?)$/, '$1'))) {
-                            const newSrc = item.src.replace(/https:\\/\\/[^/]+\\//g, 'http://${IP}:${PORT2}/');
+                        if (item.src?.includes('${HOST_CDN}'.replace(/^.+\\.([A-Za-z0-9]+\\.[A-Za-z]+\\/?)$/, '$1'))) {
+                            const newSrc = item.src.replace(/https:\\/\\/[^/]+\\//g, 'http://${IP}:${PORT_CDN}/');
                             document.body.innerHTML = '<iframe id="video_iframe" width="560" height="400" src="' + newSrc + '" frameborder="0" allowfullscreen=""></iframe>';
                             break;
                         }
@@ -34,15 +34,15 @@ export function runVideoAdsBlockingProxy() {
         `,
     }));
 
-    app1.listen(PORT1, () => {
-        console.log(`APP1 RUNNING: http://${IP}:${PORT1}`);
+    mainProxyServer.listen(PORT_MAIN, () => {
+        console.log(`MAIN PROXY RUNNING: http://${IP}:${PORT_MAIN}`);
     });
 
-    const app2 = express();
-    app2.use(express.json());
+    const cdnProxyServer = express();
+    cdnProxyServer.use(express.json());
 
-    app2.use('/*', logger('<APP2-PROXY>'), proxy({
-        target: HOST2,
+    cdnProxyServer.use('/*', logger('<CDN-PROXY>'), proxy({
+        target: HOST_CDN,
         destination: IP,
         followRedirects: false,
         amendIncomingHtml: `
@@ -66,7 +66,7 @@ export function runVideoAdsBlockingProxy() {
         `,
     }));
 
-    app2.listen(PORT2, () => {
-        console.log(`APP2 RUNNING: http://${IP}:${PORT2}`);
+    cdnProxyServer.listen(PORT_CDN, () => {
+        console.log(`CDN PROXY RUNNING: http://${IP}:${PORT_CDN}`);
     });
 }
