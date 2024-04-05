@@ -6,6 +6,10 @@ import { proxy } from '../middlewares/proxy.js';
 export function runVideoAdsBlockingProxy() {
     const { IP, PORT_MAIN, HOST_MAIN, PATH_MAIN, PORT_CDN, HOST_CDN } = config();
 
+    const FIRST_LOAD_DELAY_MS = 1000;
+    const SHORT_VIDEO_SCAN_INTERVAL_MS = 200;
+    const SHORT_VIDEO_DURATION_MAX_S = 120;
+
     const mainProxyServer = express();
     mainProxyServer.use(express.json());
 
@@ -15,12 +19,12 @@ export function runVideoAdsBlockingProxy() {
         pathRewrite: { '^/go': PATH_MAIN },
         amendIncomingHtml: `
             <script>
-                function trimVideoIframe() {
+                function trimMainVideoIframe() {
                     const collection = document.getElementsByTagName('iframe') || [];
                     for (const item of collection) {
                         if (item.src?.includes('${HOST_CDN}'.replace(/^.+\\.([A-Za-z0-9]+\\.[A-Za-z]+\\/?)$/, '$1'))) {
                             const newSrc = item.src.replace(/https:\\/\\/[^/]+\\//g, 'http://${IP}:${PORT_CDN}/');
-                            document.body.innerHTML = '<iframe id="video_iframe" width="560" height="400" src="' + newSrc + '" frameborder="0" allowfullscreen=""></iframe>';
+                            document.body.innerHTML = '<iframe id="video_iframe" width="840" height="600" src="' + newSrc + '" frameborder="0" allowfullscreen=""></iframe>';
                             break;
                         }
                     }
@@ -28,7 +32,7 @@ export function runVideoAdsBlockingProxy() {
                 }
 
                 document.addEventListener('DOMContentLoaded', () => {
-                    setTimeout(trimVideoIframe, 1000);
+                    setTimeout(trimMainVideoIframe, ${FIRST_LOAD_DELAY_MS});
                 });
             </script>
         `,
@@ -47,20 +51,35 @@ export function runVideoAdsBlockingProxy() {
         followRedirects: false,
         amendIncomingHtml: `
             <script>
-                function fastForwardVideoAds() {
-                    const collection = document.getElementsByTagName('video') || [];
+                function fastForwardShortVideo(video) {
+                    const isVideoShort = video.duration < ${SHORT_VIDEO_DURATION_MAX_S};
+                    const isVideoPlaying = !!(video.currentTime > 0 && !video.paused && !video.ended && video.readyState > 2);
+                    if (isVideoShort && isVideoPlaying) {
+                        video.currentTime = video.currentTime + video.duration;
+                    }
+                }
+
+                function traverseShortVideosElements(documentElement) {
+                    const collection = documentElement.getElementsByTagName('video') || [];
                     for (const video of collection) {
-                        if (!video) { continue; }
-                        const isVideoShort = video.duration < 60;
-                        const isVideoPlaying = !!(video.currentTime > 0 && !video.paused && !video.ended && video.readyState > 2);
-                        if (isVideoShort && isVideoPlaying) {
-                            video.currentTime = video.currentTime + video.duration;
+                        if (video) {
+                            fastForwardShortVideo(video);
+                        }
+                    }
+                }
+
+                function traverseShortVideosIframes() {
+                    traverseShortVideosElements(document);
+                    const collection = document.getElementsByTagName('iframe') || [];
+                    for (const iframe of collection) {
+                        if (iframe?.contentDocument) {
+                            traverseShortVideosElements(iframe.contentDocument);
                         }
                     }
                 }
 
                 document.addEventListener('DOMContentLoaded', () => {
-                    setInterval(fastForwardVideoAds, 200);
+                    setInterval(traverseShortVideosIframes, ${SHORT_VIDEO_SCAN_INTERVAL_MS});
                 });
             </script>
         `,
