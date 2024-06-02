@@ -8,13 +8,22 @@ export function proxy(config = {}) {
         target,
         destination,
         followRedirects,
+        headers,
         amendOutgoingCookies,
         amendOutgoingJson,
         amendIncomingCookies,
         amendIncomingJson,
         amendIncomingHtml,
+        pathRewrite,
         ...restConfig
     } = config;
+
+    const host = (new URL(target)).host;
+    const protocol = (new URL(target)).protocol + '//';
+    let referer = Object.values(pathRewrite || {})?.[0] || '/';
+    if (referer[0] !== '/') {
+        referer = '/' + referer;
+    }
 
     return createProxyMiddleware({
         target: target,
@@ -22,9 +31,13 @@ export function proxy(config = {}) {
         changeOrigin: true,
         cookieDomainRewrite: destination,
         followRedirects,
+        headers: {
+            host,
+            referer: protocol + host + referer,
+            ...headers,
+        },
         onProxyReq: (proxyReq, req) => {
             const contentType = proxyReq.getHeader('Content-Type') || '';
-
             if (amendOutgoingCookies) {
                 let newCookiesString = '';
                 if (typeof amendOutgoingCookies === 'function') {
@@ -99,6 +112,7 @@ export function proxy(config = {}) {
 
             return responseBuffer;
         }),
+        ...pathRewrite,
         ...restConfig,
     });
 };
